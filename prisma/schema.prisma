@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Figure {
+  id               Int       @id @default(autoincrement())
+  name             String
+  brand            String
+  category         String
+  scale            String?
+  releaseDate      DateTime?
+  originalMsrpJpy  Int?
+  originalMsrpUsd  Decimal?  @db.Decimal(10, 2)
+  imageUrl         String?
+  createdAt        DateTime  @default(now())
+
+  listings         Listing[]
+  watchlistEntries Watchlist[]
+  predictions      PricePrediction[]
+
+  @@map("figures")
+}
+
+model Listing {
+  id              Int      @id @default(autoincrement())
+  figureId        Int
+  retailer        String
+  retailerUrl     String
+  currentPriceUsd Decimal  @db.Decimal(10, 2)
+  inStock         Boolean  @default(true)
+  lastScrapedAt   DateTime @default(now()) @updatedAt
+
+  figure       Figure         @relation(fields: [figureId], references: [id], onDelete: Cascade)
+  priceHistory PriceHistory[]
+
+  @@map("listings")
+}
+
+model PriceHistory {
+  id         Int      @id @default(autoincrement())
+  listingId  Int
+  priceUsd   Decimal  @db.Decimal(10, 2)
+  inStock    Boolean
+  recordedAt DateTime @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("price_history")
+}
+
+model ShippingRate {
+  id              Int     @id @default(autoincrement())
+  originCountry   String
+  destinationZone Int
+  weightGrams     Int
+  method          String
+  rateUsd         Decimal @db.Decimal(10, 2)
+
+  @@unique([originCountry, destinationZone, weightGrams, method])
+  @@map("shipping_rates")
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  email        String    @unique
+  passwordHash String
+  zipCode      String?
+  country      String?
+  createdAt    DateTime  @default(now())
+
+  watchlist Watchlist[]
+
+  @@map("users")
+}
+
+model Watchlist {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  figureId       Int
+  targetPriceUsd Decimal? @db.Decimal(10, 2)
+  addedAt        DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  figure Figure @relation(fields: [figureId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, figureId])
+  @@map("watchlist")
+}
+
+model PricePrediction {
+  id              Int      @id @default(autoincrement())
+  figureId        Int
+  predictionScore Decimal  @db.Decimal(5, 4)
+  recommendation  String
+  confidence      Decimal  @db.Decimal(5, 4)
+  predictedAt     DateTime @default(now())
+  modelVersion    String
+
+  figure Figure @relation(fields: [figureId], references: [id], onDelete: Cascade)
+
+  @@map("price_predictions")
+}
