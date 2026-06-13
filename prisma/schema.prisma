@@ -39,6 +39,7 @@ model Listing {
   figure       Figure         @relation(fields: [figureId], references: [id], onDelete: Cascade)
   priceHistory PriceHistory[]
 
+  @@unique([figureId, retailer])
   @@map("listings")
 }
 
