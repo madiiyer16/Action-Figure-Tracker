@@ -4,115 +4,199 @@
 
 ---
 
-## Project overview
+## Project Vision
 
-Action figure price tracker that compares total landed cost (base price + shipping) across AmiAmi and BBTS, with price history charts and a shipping calculator. ML buy/wait predictions and a watchlist with email alerts are planned.
+Action figure price tracker for collectors who import figures from Japan. The core problem: a figure listed at $60 on AmiAmi Japan might cost $95 landed after EMS shipping. A competing listing on BBTS might be $85 with free US shipping. Right now collectors calculate this manually across multiple tabs. This app does it automatically.
 
-**Stack**: Next.js 16 App Router · TypeScript · Tailwind v4 · Prisma 6 · Neon PostgreSQL · Recharts  
-**Prisma client path**: `@/generated/prisma/client` (not `@prisma/client`)  
-**DB singleton**: `src/lib/prisma.ts`  
-**Scraper runtime**: Python venv at `scrapers/venv/`
-
----
-
-## Phase status
-
-| Phase | Status | Summary |
-|-------|--------|---------|
-| 1 — Foundation | ✅ Done | Next.js app, Prisma schema (7 models), Neon DB, static UI shells |
-| 2 — Scrapers | ✅ Done | AmiAmi + BBTS Playwright scrapers, DB upsert logic |
-| 3 — Live data | ✅ Done | API routes, search, figure detail, price chart, shipping calculator |
-| 4 — Auth + Watchlist | 🔲 Next | See below |
+**Full feature set (all phases):**
+1. **Price aggregator** — scrape AmiAmi and BBTS, show all prices in one place
+2. **Shipping calculator** — true landed cost (price + shipping) based on user's zip code
+3. **Price history chart** — line chart of price over time per retailer
+4. **ML price prediction** — buy now vs wait recommendation based on price trend, days since release, restock history
+5. **Price drop alerts** — email when landed cost hits user's target price
+6. **Watchlist** — save figures, track them on a dashboard
 
 ---
 
-## DB state (as of Phase 3)
+## Rules for every Claude instance working on this project
+
+1. **No co-author tags in commits** — commits show only the user's name, never `Co-Authored-By: Claude`
+2. **Give a handoff document** when the conversation gets long (~80% context) or at each phase boundary. Must include: what was built, known issues, what comes next, and all carry-over rules. Tell the user to paste the contents of this file into the next chat.
+3. **Do one phase at a time** — do not jump ahead
+4. **Explain each step** before doing it
+5. **Update this file** at the end of every session before committing
+
+---
+
+## Tech Stack
+
+| Layer | Choice | Notes |
+|---|---|---|
+| Frontend | Next.js 16, App Router, TypeScript | `src/app/` structure |
+| Styling | Tailwind CSS v4 | Uses `@import "tailwindcss"` in globals.css, no tailwind.config file |
+| Charts | Recharts | Installed |
+| Database | Neon PostgreSQL | Free tier, does not pause (unlike Supabase) |
+| ORM | Prisma 6 | Client at `@/generated/prisma/client` (NOT `@prisma/client`) |
+| Scrapers | Python 3.12, Playwright | venv at `scrapers/venv/` |
+| Auth | Custom JWT sessions | Cookie-based, `src/lib/session.ts` + `src/lib/dal.ts` |
+| ML service | FastAPI + scikit-learn | Not built yet — Phase 5 |
+| Deployment | Vercel (frontend), Render (ML) | Not deployed yet — Phase 6 |
+| Cron | GitHub Actions | Free, runs scrapers every 12h — Phase 6 |
+
+---
+
+## Critical Gotchas
+
+1. **`params` and `searchParams` are Promises in Next.js 16** — always `await params` and `await searchParams` in server components and route handlers
+2. **Prisma Decimal and Date aren't serializable** — convert before passing as client component props: `Number(decimal)`, `date.toISOString()`
+3. **Prisma client import** is `from '@/generated/prisma/client'`, not `@prisma/client`
+4. **Raw SQL column names are quoted camelCase** — `"figureId"`, `"currentPriceUsd"`, `"priceUsd"`, `"inStock"`, `"imageUrl"`, `"recordedAt"`, `"retailerUrl"`, `"lastScrapedAt"`, `"listingId"`
+5. **Tailwind v4** — config is in `postcss.config.mjs`, not a `tailwind.config.js` file
+6. **Always filter bad listings** — any query against `listings` must include `where: { currentPriceUsd: { lte: 5000 } }` until the scraper bug is fixed
+7. **Read `node_modules/next/dist/docs/`** before writing any Next.js code — the AGENTS.md rule requires this; Next.js 16 has breaking changes from training data
+
+---
+
+## Database Schema
+
+All 7 tables exist and are migrated.
+
+- `figures` — id, name, brand, category, scale, imageUrl, originalMsrpJpy, originalMsrpUsd, createdAt
+- `listings` — id, figureId, retailer, retailerUrl, currentPriceUsd, inStock, lastScrapedAt — unique on (figureId, retailer)
+- `price_history` — id, listingId, priceUsd, inStock, recordedAt
+- `shipping_rates` — id, originCountry, destinationZone, weightGrams, method, rateUsd
+- `users` — id, email, passwordHash, zipCode, country, createdAt
+- `watchlist` — id, userId, figureId, targetPriceUsd, addedAt — unique on (userId, figureId)
+- `price_predictions` — id, figureId, predictionScore, recommendation, confidence, predictedAt, modelVersion
+
+---
+
+## DB State (as of Phase 3)
 
 | Table | Rows | Notes |
-|-------|------|-------|
+|---|---|---|
 | figures | 366 | |
 | listings | 366 | 254 BBTS · 112 AmiAmi |
-| price_history | 892 | 2 scrape runs |
-| shipping_rates | 18 | JP→US (EMS/SAL) and US→US (standard) at 300–2000g |
-| users | 0 | Schema ready, no auth yet |
+| price_history | 892 | 2 scrape runs (Jun 13–14 2026) |
+| shipping_rates | 18 | JP→US EMS/SAL and US→US standard, zone 1 only, 300–2000g |
+| users | 0 | Schema ready |
 | watchlist | 0 | Schema ready |
 | price_predictions | 0 | Schema ready |
 
 ---
 
-## What exists
+## Phase Status
 
-### API routes (`src/app/api/`)
-- `GET /api/search?q=&limit=` — figures with cheapest in-stock listing; filters `currentPriceUsd > 5000`
-- `GET /api/figures/[id]` — figure + all listings (filtered) + full price history
-- `GET /api/shipping?origin=JP&zone=1&method=EMS&weight=300` — looks up `shipping_rates` table
+### Phase 1 — Foundation ✅ DONE
+Next.js 16 + Tailwind v4 + Prisma 6 + Neon DB. All 7 tables migrated. Static homepage and figure detail page.
 
-### Pages
-- `/` — async server component reads `searchParams.q` (Promise), passes to `SearchSection`
-- `/figure/[id]` — async server component reads `params.id` (Promise), fetches Prisma, serializes Decimal/Date, renders `ShippingCalculator` + `PriceChart`
-- `/watchlist` — static placeholder, needs auth
+### Phase 2 — Scrapers ✅ DONE
+- `scrapers/amiami.py` — Playwright (AmiAmi is a Nuxt SPA, plain requests get 403)
+- `scrapers/bbts.py` — Playwright (BBTS also blocks plain HTTP), fresh browser context per keyword
+- `scrapers/db.py` — upsert_figure, upsert_listing, record_price
+- `scrapers/run.py` — runner: `scrapers/venv/bin/python scrapers/run.py`
+- Run daily to accumulate price history for ML
 
-### Client components (`src/app/ui/`)
-- `SearchSection.tsx` — search form + results list, calls `/api/search`
-- `PriceChart.tsx` — Recharts `LineChart`, one line per retailer, dark-themed
-- `ShippingCalculator.tsx` — zip + method form, calls `/api/shipping` per retailer, re-sorts by landed cost
+### Phase 3 — Core UI ✅ DONE
+- `src/app/api/search/route.ts` — `GET /api/search?q=&limit=`
+- `src/app/api/figures/[id]/route.ts` — figure + listings + price history
+- `src/app/api/shipping/route.ts` — shipping rate lookup
+- `src/app/ui/SearchSection.tsx` — live search (client component)
+- `src/app/ui/PriceChart.tsx` — Recharts line chart, one line per retailer
+- `src/app/ui/ShippingCalculator.tsx` — price comparison + shipping calculator
+- Homepage and figure detail page connected to real DB
 
-### Scrapers (`scrapers/`)
-- `amiami.py` — Playwright scraper for AmiAmi (Nuxt SPA, requests get 403)
-- `bbts.py` — Playwright scraper for BigBadToyStore
-- `db.py` — `upsert_figure`, `upsert_listing`, `record_price`
-- `run.py` — runs both scrapers
+### Phase 4 — Auth and Watchlist ✅ DONE
+- `src/lib/session.ts` — JWT cookie sessions
+- `src/lib/dal.ts` — `verifySession()` (redirects to login if unauthed), `getOptionalSession()` (returns null if unauthed)
+- `src/lib/email.ts` — email helper for price alerts
+- `src/app/actions/auth.ts` — `signup`, `login`, `logout` server actions using bcrypt
+- `src/app/login/` and `src/app/signup/` — login and signup pages with forms
+- `src/app/ui/LoginForm.tsx`, `SignupForm.tsx`, `WatchButton.tsx` — client form components
+- `src/app/watchlist/page.tsx` — real watchlist dashboard (requires auth, shows figure + current price vs target, "At target" badge)
+- `src/app/api/watchlist/[id]/route.ts` — watchlist CRUD
+- `src/app/api/cron/price-alerts/` — cron endpoint that checks watchlist targets and sends emails
+- `src/app/layout.tsx` — shows Sign in / Sign out in nav based on session
+- `SESSION_SECRET` and `CRON_SECRET` in `.env`
+
+**Note**: Email sending requires SMTP config in `.env` (commented out). Set up before testing price alerts.
+
+### Phase 5 — ML Model 🔲 NOT STARTED
+Needs 2–4 weeks of price history data first (start no earlier than late June 2026).
+
+Plan:
+- `ml-service/` directory — FastAPI app
+- Features: days_since_release, price_vs_msrp_ratio, price_30/60/90d_change_pct, restock_count, in_stock, category/brand encoded
+- Target variable: price_30d_future_change_pct
+- Model: Gradient Boosting Regressor (scikit-learn)
+- Endpoint: `POST /predict` → { prediction_score, recommendation, confidence }
+- Deploy to Render free tier
+- Wire prediction badge into figure detail page (currently hardcoded "Buy Now / 74%")
+
+### Phase 6 — Deploy and Cron 🔲 NOT STARTED
+- Deploy frontend to Vercel
+- GitHub Actions cron — runs `scrapers/run.py` every 12 hours (free, no server needed)
+- Deploy ML service to Render
+- Fix zip→zone shipping mapping (currently all hardcoded to zone 1)
+- Seed shipping rates for zones 2–8
+- Write README with screenshots/demo video
 
 ---
 
-## Known issues
+## Key Files
+
+```
+src/
+  app/
+    page.tsx                  — homepage with live search
+    figure/[id]/page.tsx      — detail: listings, chart, shipping calc
+    watchlist/                — watchlist dashboard
+    login/                    — login page
+    signup/                   — signup page
+    actions/                  — server actions (auth)
+    ui/
+      SearchSection.tsx       — search bar + results (client)
+      PriceChart.tsx          — Recharts line chart (client)
+      ShippingCalculator.tsx  — price comparison + shipping form (client)
+    api/
+      search/route.ts
+      figures/[id]/route.ts
+      shipping/route.ts
+  lib/
+    prisma.ts                 — Prisma singleton
+    session.ts                — JWT session helpers
+    dal.ts                    — data access layer
+scrapers/
+  amiami.py                   — AmiAmi Playwright scraper
+  bbts.py                     — BBTS Playwright scraper
+  db.py                       — shared DB write helpers
+  run.py                      — runner
+  venv/                       — Python venv (gitignored)
+prisma/
+  schema.prisma
+  migrations/
+.env                          — DATABASE_URL, JPY_TO_USD_RATE, SESSION_SECRET, CRON_SECRET
+PROGRESS.md                   — this file
+```
+
+---
+
+## Known Issues
 
 ### Bad price data (~69 listings)
-Some listings have `currentPriceUsd > 5000` (highest is ~$17M). Caused by malformed price strings in `amiami.py → jpy_to_usd()` that return a raw large integer instead of a USD value. **Workaround already applied**: all Prisma queries and API routes filter `{ currentPriceUsd: { lte: 5000 } }`. **Root fix needed**: add a sanity cap in `jpy_to_usd()` (reject result > 2000) and re-run the scraper or run a `DELETE FROM listings WHERE "currentPriceUsd" > 5000` migration.
+Some listings have `currentPriceUsd > 5000` (highest ~$17M). Caused by malformed JPY strings in `jpy_to_usd()`. **Workaround**: all queries filter `{ currentPriceUsd: { lte: 5000 } }`. **Fix needed**: cap result > 2000 in `jpy_to_usd()` and run `DELETE FROM listings WHERE "currentPriceUsd" > 5000`.
 
-### Shipping zone mapping is simplified
-All US zip codes map to zone 1. The `shipping_rates` table only has zone 1 rows. Expanding to real Japan Post zones (by zip prefix) is deferred.
+### Shipping zone hardcoded to 1
+All zip codes map to zone 1. Table only has zone 1 rows. Deferred to Phase 6.
 
 ### ML predictions hardcoded
-The "Buy Now · 74% confidence" badge on the figure detail page is static. `price_predictions` table is empty.
+"Buy Now · 74% confidence" badge is static. `price_predictions` table is empty. Fix in Phase 5.
 
 ---
 
-## Next phase: 4 — Auth + Watchlist
-
-### Must-have
-- [ ] User auth: sign up / sign in / sign out against the `users` table (`email`, `passwordHash`, `zipCode`, `country`). Session via NextAuth or a lightweight JWT cookie.
-- [ ] `POST /api/watchlist` — add figure to watchlist with optional `targetPriceUsd`
-- [ ] `DELETE /api/watchlist/[id]` — remove entry
-- [ ] `/watchlist` page — list user's watched figures with current price vs target, mark figures below target in green
-- [ ] Wire the "Watch" button on `/figure/[id]` to the API (disabled / redirect to login if not authed)
-
-### Should-have
-- [ ] Price alert emails: after each scrape run, check `watchlist` entries where `currentPriceUsd ≤ targetPriceUsd` and send email (Resend or Nodemailer). Users table has `email`.
-- [ ] Fix bad price data: cap in `jpy_to_usd()` + clean migration
-
-### Nice-to-have
-- [ ] Wire `price_predictions` table: simple heuristic (price trending up over last 3 history rows → "Buy Now", else "Wait"), write a scraper post-hook that inserts a row per figure
-- [ ] Expose user's saved zip code in `ShippingCalculator` as a default
-
----
-
-## Gotchas for new instances
-
-1. **`params` and `searchParams` are Promises in Next.js 16** — always `await params` and `await searchParams` in server components and route handlers.
-2. **Prisma Decimal and Date aren't serializable** — convert before passing as client component props: `Number(decimal)`, `date.toISOString()`.
-3. **Prisma client import** is `from '@/generated/prisma/client'`, not the usual `@prisma/client`.
-4. **Raw SQL column names are quoted camelCase** — e.g. `"figureId"`, `"currentPriceUsd"`, `"priceUsd"`. The Python scrapers use these too (see `db.py`).
-5. **Tailwind v4** — uses `@import "tailwindcss"` in globals.css, not `@tailwind base/components/utilities`. Config is in `postcss.config.mjs`.
-6. **Always filter bad listings** — any new query against `listings` should include `where: { currentPriceUsd: { lte: 5000 } }` until the scraper bug is fixed.
-7. **Read `node_modules/next/dist/docs/` before writing Next.js code** — the AGENTS.md rule applies; Next.js 16 has breaking changes from training data.
-8. **Do not add `Co-Authored-By: Claude` to commits** — omit the co-author trailer entirely. Plain commit messages only.
-
----
-
-## Session housekeeping
+## Session Housekeeping
 
 At the end of every session:
-1. Update the relevant sections of this file (DB state, phase status, known issues)
-2. `git add` your changes and commit **without** a `Co-Authored-By` line
-3. `git push` so GitHub stays current and the next session can read this file fresh
+1. Update the relevant sections of this file
+2. Commit all changes (no `Co-Authored-By` line)
+3. Push to GitHub

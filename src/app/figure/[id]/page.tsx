@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import PriceChart, { type ChartPoint } from '@/app/ui/PriceChart'
 import ShippingCalculator from '@/app/ui/ShippingCalculator'
+import WatchButton from '@/app/ui/WatchButton'
+import { getOptionalSession } from '@/lib/dal'
 
 export default async function FigureDetailPage({
   params,
@@ -12,20 +14,29 @@ export default async function FigureDetailPage({
   const figureId = parseInt(id)
   if (isNaN(figureId)) notFound()
 
-  const figure = await prisma.figure.findUnique({
-    where: { id: figureId },
-    include: {
-      listings: {
-        where: { currentPriceUsd: { lte: 5000 } },
-        orderBy: { currentPriceUsd: 'asc' },
-        include: {
-          priceHistory: {
-            orderBy: { recordedAt: 'asc' },
+  const session = await getOptionalSession()
+
+  const [figure, watchEntry] = await Promise.all([
+    prisma.figure.findUnique({
+      where: { id: figureId },
+      include: {
+        listings: {
+          where: { currentPriceUsd: { lte: 5000 } },
+          orderBy: { currentPriceUsd: 'asc' },
+          include: {
+            priceHistory: {
+              orderBy: { recordedAt: 'asc' },
+            },
           },
         },
       },
-    },
-  })
+    }),
+    session
+      ? prisma.watchlist.findUnique({
+          where: { userId_figureId: { userId: session.userId, figureId } },
+        })
+      : null,
+  ])
 
   if (!figure) notFound()
 
@@ -125,18 +136,13 @@ export default async function FigureDetailPage({
       </section>
 
       {/* Watchlist CTA */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4">
-        <div className="flex-1">
-          <div className="font-medium text-sm">Add to watchlist</div>
-          <div className="text-xs text-zinc-500 mt-0.5">
-            Set a target price and get an email alert when the landed cost drops
-            below it.
-          </div>
-        </div>
-        <button className="bg-zinc-100 text-zinc-900 font-medium px-4 py-2 rounded-lg text-sm hover:bg-white transition-colors shrink-0">
-          Watch
-        </button>
-      </div>
+      <WatchButton
+        figureId={figureId}
+        initialWatching={!!watchEntry}
+        initialEntryId={watchEntry?.id ?? null}
+        initialTarget={watchEntry?.targetPriceUsd ? Number(watchEntry.targetPriceUsd) : null}
+        isLoggedIn={!!session}
+      />
     </div>
   )
 }

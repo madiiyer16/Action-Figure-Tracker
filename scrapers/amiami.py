@@ -38,7 +38,12 @@ USER_AGENT = (
 def jpy_to_usd(jpy_text: str) -> Decimal | None:
     cleaned = re.sub(r"[^\d]", "", jpy_text)
     try:
-        return (Decimal(cleaned) * JPY_TO_USD).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        result = (Decimal(cleaned) * JPY_TO_USD).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        # Sanity cap: no collectible figure should cost more than $2000 USD
+        if result > Decimal("2000"):
+            log.warning("jpy_to_usd: suspicious value %s from %r — skipping", result, jpy_text)
+            return None
+        return result
     except InvalidOperation:
         return None
 
