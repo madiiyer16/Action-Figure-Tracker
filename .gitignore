@@ -42,6 +42,9 @@ next-env.d.ts
 
 /src/generated/prisma
 
+# Local project notes
+PROGRESS.md
+
 # Python
 get-pip.py
 scrapers/__pycache__/
