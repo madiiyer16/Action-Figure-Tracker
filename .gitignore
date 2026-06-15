@@ -49,5 +49,7 @@ PROGRESS.md
 get-pip.py
 scrapers/__pycache__/
 scrapers/venv/
+ml-service/venv/
+ml-service/model.pkl
 **/__pycache__/
 *.pyc

@@ -5,6 +5,28 @@ import ShippingCalculator from '@/app/ui/ShippingCalculator'
 import WatchButton from '@/app/ui/WatchButton'
 import { getOptionalSession } from '@/lib/dal'
 
+type Prediction =
+  | { status: 'insufficient_data' }
+  | { status: 'ok'; recommendation: 'buy' | 'wait'; confidence: number; change_pct: number }
+
+async function getPrediction(figureId: number): Promise<Prediction> {
+  const url = process.env.ML_SERVICE_URL
+  if (!url) return { status: 'insufficient_data' }
+  try {
+    const res = await fetch(`${url}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ figure_id: figureId }),
+      signal: AbortSignal.timeout(2000),
+      next: { revalidate: 3600 },
+    })
+    if (!res.ok) return { status: 'insufficient_data' }
+    return res.json()
+  } catch {
+    return { status: 'insufficient_data' }
+  }
+}
+
 export default async function FigureDetailPage({
   params,
 }: {
@@ -16,7 +38,7 @@ export default async function FigureDetailPage({
 
   const session = await getOptionalSession()
 
-  const [figure, watchEntry] = await Promise.all([
+  const [figure, watchEntry, prediction] = await Promise.all([
     prisma.figure.findUnique({
       where: { id: figureId },
       include: {
@@ -36,6 +58,7 @@ export default async function FigureDetailPage({
           where: { userId_figureId: { userId: session.userId, figureId } },
         })
       : null,
+    getPrediction(figureId),
   ])
 
   if (!figure) notFound()
@@ -99,14 +122,29 @@ export default async function FigureDetailPage({
             {figure.scale ? ` · ${figure.scale}` : ''}
           </div>
           <h1 className="text-3xl font-bold mb-2">{figure.name}</h1>
-          <div className="flex gap-2 flex-wrap">
-            <span className="bg-green-900/50 text-green-400 border border-green-800 text-xs px-2 py-1 rounded-full font-medium">
-              Buy Now
-            </span>
-            <span className="text-xs text-zinc-500 self-center">
-              ML prediction: price likely rising · 74% confidence
-            </span>
-          </div>
+          {prediction.status === 'ok' ? (
+            <div className="flex gap-2 flex-wrap">
+              <span className={`text-xs px-2 py-1 rounded-full font-medium border ${
+                prediction.recommendation === 'buy'
+                  ? 'bg-green-900/50 text-green-400 border-green-800'
+                  : 'bg-yellow-900/50 text-yellow-400 border-yellow-800'
+              }`}>
+                {prediction.recommendation === 'buy' ? 'Buy Now' : 'Wait'}
+              </span>
+              <span className="text-xs text-zinc-500 self-center">
+                ML prediction: price likely {prediction.recommendation === 'buy' ? 'rising' : 'falling'} · {Math.round(prediction.confidence * 100)}% confidence
+              </span>
+            </div>
+          ) : (
+            <div className="flex gap-2 flex-wrap">
+              <span className="bg-zinc-800 text-zinc-400 border border-zinc-700 text-xs px-2 py-1 rounded-full font-medium">
+                Collecting data
+              </span>
+              <span className="text-xs text-zinc-600 self-center">
+                ML prediction available after 30 days of price history
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
