@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { zipToZone } from '@/lib/zipToZone'
 
 export type SerializedListing = {
   id: number
@@ -44,12 +45,13 @@ export default function ShippingCalculator({ listings }: { listings: SerializedL
     setLoading(true)
 
     try {
+      const zone = zipToZone(zip)
       const results = await Promise.all(
         listings.map(async (listing) => {
           const origin = originForRetailer(listing.retailer)
           const m = origin === 'US' ? 'standard' : method
           const res = await fetch(
-            `/api/shipping?origin=${origin}&zone=1&method=${m}&weight=300`
+            `/api/shipping?origin=${origin}&zone=${zone}&method=${m}&weight=300`
           )
           const data = await res.json()
           return {
