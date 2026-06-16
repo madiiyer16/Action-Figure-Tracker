@@ -116,7 +116,6 @@ def scrape_keyword(page, keyword: str) -> list[dict]:
 
 
 def run() -> int:
-    conn = get_conn()
     total = 0
 
     with sync_playwright() as pw:
@@ -132,24 +131,33 @@ def run() -> int:
                 finally:
                     ctx.close()
 
-                for item in items:
-                    try:
-                        figure_id = upsert_figure(
-                            conn, item["name"], item["brand"], item["category"], item.get("image_url")
-                        )
-                        listing_id = upsert_listing(
-                            conn, figure_id, RETAILER, item["url"], item["price_usd"], item["in_stock"]
-                        )
-                        record_price(conn, listing_id, item["price_usd"], item["in_stock"])
-                        conn.commit()
-                        total += 1
-                    except Exception as e:
-                        conn.rollback()
-                        log.error("DB error for '%s': %s", item["name"], e)
+                if not items:
+                    time.sleep(10)
+                    continue
+
+                # Open a fresh connection per keyword batch so it's never idle
+                # long enough for Neon to drop it during scraping timeouts.
+                conn = get_conn()
+                try:
+                    for item in items:
+                        try:
+                            figure_id = upsert_figure(
+                                conn, item["name"], item["brand"], item["category"], item.get("image_url")
+                            )
+                            listing_id = upsert_listing(
+                                conn, figure_id, RETAILER, item["url"], item["price_usd"], item["in_stock"]
+                            )
+                            record_price(conn, listing_id, item["price_usd"], item["in_stock"])
+                            conn.commit()
+                            total += 1
+                        except Exception as e:
+                            conn.rollback()
+                            log.error("DB error for '%s': %s", item["name"], e)
+                finally:
+                    conn.close()
 
                 time.sleep(10)  # longer delay between keywords to avoid rate limiting
         finally:
             browser.close()
-            conn.close()
 
     return total
