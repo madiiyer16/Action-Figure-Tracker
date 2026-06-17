@@ -11,7 +11,7 @@ export default async function WatchlistPage() {
       figure: {
         include: {
           listings: {
-            where: { currentPriceUsd: { lte: 5000 }, inStock: true },
+            where: { currentPriceUsd: { lte: 2000 }, inStock: true },
             orderBy: { currentPriceUsd: 'asc' },
             take: 1,
           },

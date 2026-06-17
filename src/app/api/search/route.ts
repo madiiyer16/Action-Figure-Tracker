@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       : {},
     include: {
       listings: {
-        where: { currentPriceUsd: { lte: 5000 } },
+        where: { currentPriceUsd: { lte: 2000 } },
         orderBy: { currentPriceUsd: 'asc' },
         take: 1,
       },

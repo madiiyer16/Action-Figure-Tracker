@@ -43,7 +43,7 @@ export default async function FigureDetailPage({
       where: { id: figureId },
       include: {
         listings: {
-          where: { currentPriceUsd: { lte: 5000 } },
+          where: { currentPriceUsd: { lte: 2000 } },
           orderBy: { currentPriceUsd: 'asc' },
           include: {
             priceHistory: {
