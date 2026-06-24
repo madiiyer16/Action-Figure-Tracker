@@ -12,6 +12,10 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 from db import get_conn, upsert_figure, upsert_listing, record_price
+from normalize import (
+    extract_retailer_sku, normalize_brand, normalize_title,
+    extract_edition_tokens, extract_item_number, extract_scale,
+)
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +111,7 @@ def scrape_keyword(page, keyword: str) -> list[dict]:
             classes = item.get_attribute("class") or ""
             in_stock = "nomore" not in classes
 
+            norm_title = normalize_title(name)
             results.append({
                 "name": name,
                 "brand": brand,
@@ -115,6 +120,12 @@ def scrape_keyword(page, keyword: str) -> list[dict]:
                 "in_stock": in_stock,
                 "url": url_full,
                 "image_url": img_src or None,
+                "retailer_sku": extract_retailer_sku(RETAILER, url_full),
+                "normalized_title": norm_title,
+                "edition_tokens": extract_edition_tokens(norm_title),
+                "item_number": extract_item_number(norm_title),
+                "scale_parsed": extract_scale(norm_title),
+                "normalized_brand": normalize_brand(brand),
             })
         except Exception as e:
             log.debug("Skipping item: %s", e)
@@ -145,10 +156,17 @@ def run() -> int:
                     for item in items:
                         try:
                             figure_id = upsert_figure(
-                                conn, item["name"], item["brand"], item["category"], item.get("image_url")
+                                conn, item["name"], item["brand"], item["category"],
+                                item.get("image_url"), item.get("normalized_brand"),
                             )
                             listing_id = upsert_listing(
-                                conn, figure_id, RETAILER, item["url"], item["price_usd"], item["in_stock"]
+                                conn, figure_id, RETAILER, item["url"],
+                                item["price_usd"], item["in_stock"],
+                                retailer_sku=item.get("retailer_sku"),
+                                normalized_title=item.get("normalized_title"),
+                                edition_tokens=item.get("edition_tokens"),
+                                item_number=item.get("item_number"),
+                                scale_parsed=item.get("scale_parsed"),
                             )
                             record_price(conn, listing_id, item["price_usd"], item["in_stock"])
                             conn.commit()
