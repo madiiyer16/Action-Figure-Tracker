@@ -32,3 +32,10 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JPY_TO_USD_RATE: ${{ secrets.JPY_TO_USD_RATE }}
         run: python run.py
+
+      - name: Trigger price alerts
+        if: ${{ secrets.SITE_URL != '' }}
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.SITE_URL }}/api/cron/price-alerts" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

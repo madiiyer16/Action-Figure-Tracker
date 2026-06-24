@@ -32,6 +32,7 @@ model Listing {
   figureId        Int
   retailer        String
   retailerUrl     String
+  retailerSku     String?
   currentPriceUsd Decimal  @db.Decimal(10, 2)
   inStock         Boolean  @default(true)
   lastScrapedAt   DateTime @default(now()) @updatedAt
@@ -39,7 +40,6 @@ model Listing {
   figure       Figure         @relation(fields: [figureId], references: [id], onDelete: Cascade)
   priceHistory PriceHistory[]
 
-  @@unique([figureId, retailer])
   @@map("listings")
 }
 
