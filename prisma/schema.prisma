@@ -9,20 +9,28 @@ datasource db {
 }
 
 model Figure {
-  id               Int       @id @default(autoincrement())
-  name             String
-  brand            String
-  category         String
-  scale            String?
-  releaseDate      DateTime?
-  originalMsrpJpy  Int?
-  originalMsrpUsd  Decimal?  @db.Decimal(10, 2)
-  imageUrl         String?
-  createdAt        DateTime  @default(now())
+  id                Int       @id @default(autoincrement())
+  name              String
+  brand             String
+  category          String
+  scale             String?
+  releaseDate       DateTime?
+  originalMsrpJpy   Int?
+  originalMsrpUsd   Decimal?  @db.Decimal(10, 2)
+  imageUrl          String?
+  createdAt         DateTime  @default(now())
 
-  listings         Listing[]
-  watchlistEntries Watchlist[]
-  predictions      PricePrediction[]
+  // Matching fields
+  normalizedBrand   String?
+  canonicalFigureId Int?
+
+  listings          Listing[]
+  watchlistEntries  Watchlist[]
+  predictions       PricePrediction[]
+  canonicalFigure   Figure?          @relation("Canonical", fields: [canonicalFigureId], references: [id])
+  duplicates        Figure[]         @relation("Canonical")
+  matchCandidatesA  MatchCandidate[] @relation("FigureA")
+  matchCandidatesB  MatchCandidate[] @relation("FigureB")
 
   @@map("figures")
 }
@@ -36,6 +44,12 @@ model Listing {
   currentPriceUsd Decimal  @db.Decimal(10, 2)
   inStock         Boolean  @default(true)
   lastScrapedAt   DateTime @default(now()) @updatedAt
+
+  // Matching fields (populated at ingest from step 5 onward)
+  normalizedTitle String?
+  editionTokens   String[]
+  itemNumber      String?
+  scaleParsed     String?
 
   figure       Figure         @relation(fields: [figureId], references: [id], onDelete: Cascade)
   priceHistory PriceHistory[]
@@ -106,4 +120,23 @@ model PricePrediction {
   figure Figure @relation(fields: [figureId], references: [id], onDelete: Cascade)
 
   @@map("price_predictions")
+}
+
+model MatchCandidate {
+  id         Int       @id @default(autoincrement())
+  figureAId  Int
+  figureBId  Int
+  score      Decimal   @db.Decimal(5, 4)
+  method     String
+  status     String    @default("pending")
+  scaleMatch Boolean?
+  priceMatch Boolean?
+  reviewedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  figureA Figure @relation("FigureA", fields: [figureAId], references: [id])
+  figureB Figure @relation("FigureB", fields: [figureBId], references: [id])
+
+  @@unique([figureAId, figureBId])
+  @@map("match_candidates")
 }
