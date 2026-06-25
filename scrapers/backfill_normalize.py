@@ -28,13 +28,18 @@ from normalize import (
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--force", action="store_true",
+                        help="Re-run even for rows that already have values (use after normalize.py changes)")
     args = parser.parse_args()
 
     conn = get_conn()
     try:
         # --- Figures: normalizedBrand ---
         with conn.cursor() as cur:
-            cur.execute('SELECT id, brand FROM figures WHERE "normalizedBrand" IS NULL')
+            if args.force:
+                cur.execute('SELECT id, brand FROM figures')
+            else:
+                cur.execute('SELECT id, brand FROM figures WHERE "normalizedBrand" IS NULL')
             figures = cur.fetchall()
 
         print(f"Figures needing normalizedBrand: {len(figures)}")
@@ -51,11 +56,14 @@ def main() -> None:
 
         # --- Listings: normalizedTitle, editionTokens, itemNumber, scaleParsed ---
         with conn.cursor() as cur:
-            cur.execute(
-                '''SELECT id, "retailerUrl", retailer
-                   FROM listings
-                   WHERE "normalizedTitle" IS NULL'''
-            )
+            if args.force:
+                cur.execute('SELECT id, "retailerUrl", retailer FROM listings')
+            else:
+                cur.execute(
+                    '''SELECT id, "retailerUrl", retailer
+                       FROM listings
+                       WHERE "normalizedTitle" IS NULL'''
+                )
             listings = cur.fetchall()
 
         print(f"Listings needing normalization: {len(listings)}")

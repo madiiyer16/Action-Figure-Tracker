@@ -84,13 +84,18 @@ def normalize_brand(raw: str) -> str:
 
 # Edition tokens that, if they differ between two listings, veto the match.
 _EDITION_PATTERNS = [
-    r"\b(reissue|re-issue|re-release|rerelease)\b",
+    # Reissue is intentionally NOT here: a reissue is the same product,
+    # so it should not trigger a veto when one side has it and the other doesn't.
     r"\b(ver\.?\s*\d+|version\s*\d+)\b",
     r"\b(limited\s+edition|ltd\.?\s*ed\.?)\b",
     r"\b(anniversary|anni\.?)\b",
     r"\b(dx|deluxe)\b",
     r"\b(special\s+edition|sp\.?\s*ed\.?)\b",
-    r"\bexclusive\b",
+    # Named version qualifier — captures the word immediately before "ver"
+    # (e.g., "Swimsuit Ver.", "Updated Ver.", "HMO Ver.", "Racing Ver.").
+    # This detects edition conflicts when the qualifiers differ between the
+    # two sides (e.g., "swimsuit ver" vs "updated ver" → veto).
+    r"\b(\w+)\s+ver\b",
 ]
 
 _SCALE_PATTERN = re.compile(r"\b1\s*/\s*(\d+)\b")
@@ -101,7 +106,20 @@ _STRIP_WORDS = frozenset([
     "nendoroid", "figma", "gunpla", "figure", "action", "scale", "model",
     "kit", "statue", "pre-order", "preorder", "new", "the", "a", "an",
     "of", "and", "in", "on", "at", "to", "for", "from",
+    # AmiAmi listing-type prefixes (not part of the product name)
+    "exclusive", "sale", "amiami", "bonus",
+    # BBTS structural words ("No.674 Sophia" → strip "no", keep "674")
+    "no",
+    # Figma SP-NNN prefix ("No.SP-176 Pomni" → "no sp 176 pomni", strip sp)
+    "sp",
+    # Product-type word in AmiAmi model kit titles ("Plastic Model")
+    "plastic",
 ])
+
+# Regex to match standalone number tokens (item numbers, catalog IDs)
+# These are stripped from core tokens to avoid inflating Jaccard with
+# BBTS item numbers that don't appear in AmiAmi titles.
+_NUMBER_TOKEN = re.compile(r"^\d+$")
 
 
 def normalize_title(raw: str) -> str:
@@ -143,16 +161,24 @@ def extract_scale(normalized_title: str) -> str | None:
 def core_title_tokens(normalized_title: str, brand: str | None = None) -> set[str]:
     """
     Token set used for Jaccard scoring: title tokens minus stop words,
-    category keywords, edition tokens, and the brand name.
+    category keywords, and the brand name.
+
+    Edition tokens are intentionally NOT stripped here. Keeping them in
+    the set means:
+      - Matching editions ("swimsuit" in both sides) raise Jaccard ✓
+      - Mismatched editions ("swimsuit" vs "updated") lower Jaccard ✓
+      - Edition-only-on-one-side ("swimsuit ver" vs plain title) also
+        lowers Jaccard, which is the correct signal ✓
+
+    Hard edition conflicts (both sides have edition tokens but different
+    ones) are additionally caught by the veto in score_pair().
     """
     stop = set(_STRIP_WORDS)
     if brand:
         stop.update(normalize_brand(brand).split())
 
-    # Also strip edition tokens so they don't inflate Jaccard
-    edition = set()
-    for tok in extract_edition_tokens(normalized_title):
-        edition.update(tok.split())
-
-    tokens = set(normalized_title.split()) - stop - edition
-    return {t for t in tokens if len(t) > 1}
+    tokens = set(normalized_title.split()) - stop
+    # Drop single-char tokens and standalone number tokens (BBTS item numbers,
+    # catalog IDs) — they appear in BBTS titles but not AmiAmi, so they'd
+    # systematically reduce Jaccard for true matches.
+    return {t for t in tokens if len(t) > 1 and not _NUMBER_TOKEN.match(t)}
