@@ -18,8 +18,17 @@ export async function GET(
         where: { currentPriceUsd: { lte: 2000 } },
         orderBy: { currentPriceUsd: 'asc' },
         include: {
-          priceHistory: {
-            orderBy: { recordedAt: 'asc' },
+          priceHistory: { orderBy: { recordedAt: 'asc' } },
+        },
+      },
+      duplicates: {
+        include: {
+          listings: {
+            where: { currentPriceUsd: { lte: 2000 } },
+            orderBy: { currentPriceUsd: 'asc' },
+            include: {
+              priceHistory: { orderBy: { recordedAt: 'asc' } },
+            },
           },
         },
       },
@@ -30,5 +39,16 @@ export async function GET(
     return Response.json({ error: 'Not found' }, { status: 404 })
   }
 
-  return Response.json(figure)
+  // Redirect duplicate figures to their canonical URL
+  if (figure.canonicalFigureId) {
+    return Response.redirect(`/api/figures/${figure.canonicalFigureId}`, 308)
+  }
+
+  const listings = [
+    ...figure.listings,
+    ...figure.duplicates.flatMap((d) => d.listings),
+  ].sort((a, b) => Number(a.currentPriceUsd) - Number(b.currentPriceUsd))
+
+  const { duplicates: _d, listings: _l, ...figureData } = figure
+  return Response.json({ ...figureData, listings })
 }

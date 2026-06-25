@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { canonicalPrisma } from '@/lib/prisma'
 
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('q')?.trim() ?? ''
   const limit = Math.min(parseInt(request.nextUrl.searchParams.get('limit') ?? '20'), 50)
 
-  const figures = await prisma.figure.findMany({
+  const figures = await canonicalPrisma.figure.findMany({
     where: q
       ? {
           OR: [

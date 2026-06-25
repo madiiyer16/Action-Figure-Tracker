@@ -13,7 +13,14 @@ export default async function WatchlistPage() {
           listings: {
             where: { currentPriceUsd: { lte: 2000 }, inStock: true },
             orderBy: { currentPriceUsd: 'asc' },
-            take: 1,
+          },
+          duplicates: {
+            include: {
+              listings: {
+                where: { currentPriceUsd: { lte: 2000 }, inStock: true },
+                orderBy: { currentPriceUsd: 'asc' },
+              },
+            },
           },
         },
       },
@@ -47,7 +54,10 @@ export default async function WatchlistPage() {
           </div>
 
           {entries.map((entry) => {
-            const cheapest = entry.figure.listings[0]
+            const cheapest = [
+              ...entry.figure.listings,
+              ...entry.figure.duplicates.flatMap((d) => d.listings),
+            ].sort((a, b) => Number(a.currentPriceUsd) - Number(b.currentPriceUsd))[0]
             const currentPrice = cheapest ? Number(cheapest.currentPriceUsd) : null
             const target = entry.targetPriceUsd ? Number(entry.targetPriceUsd) : null
             const atTarget = target != null && currentPrice != null && currentPrice <= target

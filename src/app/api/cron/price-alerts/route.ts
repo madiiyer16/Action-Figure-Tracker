@@ -19,7 +19,14 @@ export async function POST(req: NextRequest) {
           listings: {
             where: { currentPriceUsd: { lte: 2000 }, inStock: true },
             orderBy: { currentPriceUsd: 'asc' },
-            take: 1,
+          },
+          duplicates: {
+            include: {
+              listings: {
+                where: { currentPriceUsd: { lte: 2000 }, inStock: true },
+                orderBy: { currentPriceUsd: 'asc' },
+              },
+            },
           },
         },
       },
@@ -28,7 +35,10 @@ export async function POST(req: NextRequest) {
 
   let sent = 0
   for (const entry of entries) {
-    const cheapest = entry.figure.listings[0]
+    const cheapest = [
+      ...entry.figure.listings,
+      ...entry.figure.duplicates.flatMap((d) => d.listings),
+    ].sort((a, b) => Number(a.currentPriceUsd) - Number(b.currentPriceUsd))[0]
     if (!cheapest) continue
 
     const currentPrice = Number(cheapest.currentPriceUsd)

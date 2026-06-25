@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import PriceChart, { type ChartPoint } from '@/app/ui/PriceChart'
 import ShippingCalculator from '@/app/ui/ShippingCalculator'
@@ -45,9 +45,14 @@ export default async function FigureDetailPage({
         listings: {
           where: { currentPriceUsd: { lte: 2000 } },
           orderBy: { currentPriceUsd: 'asc' },
+          include: { priceHistory: { orderBy: { recordedAt: 'asc' } } },
+        },
+        duplicates: {
           include: {
-            priceHistory: {
-              orderBy: { recordedAt: 'asc' },
+            listings: {
+              where: { currentPriceUsd: { lte: 2000 } },
+              orderBy: { currentPriceUsd: 'asc' },
+              include: { priceHistory: { orderBy: { recordedAt: 'asc' } } },
             },
           },
         },
@@ -63,8 +68,17 @@ export default async function FigureDetailPage({
 
   if (!figure) notFound()
 
+  // Redirect duplicate figures to their canonical page
+  if (figure.canonicalFigureId) redirect(`/figure/${figure.canonicalFigureId}`)
+
+  // Merge listings from this figure and any matched duplicates, cheapest first
+  const clusterListings = [
+    ...figure.listings,
+    ...figure.duplicates.flatMap((d) => d.listings),
+  ].sort((a, b) => Number(a.currentPriceUsd) - Number(b.currentPriceUsd))
+
   // Serialize Prisma Decimal/Date types to plain JS primitives for client props
-  const listings = figure.listings.map((l) => ({
+  const listings = clusterListings.map((l) => ({
     id: l.id,
     retailer: l.retailer,
     retailerUrl: l.retailerUrl,
