@@ -15,7 +15,7 @@ Pipeline:
        - below REVIEW_THRESH   → discard
 
 Usage:
-  python match.py [--dry-run] [--auto-thresh 0.75] [--review-thresh 0.40]
+  python match.py [--dry-run] [--auto-thresh 0.85] [--review-thresh 0.40]
 """
 
 import argparse
