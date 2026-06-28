@@ -114,6 +114,9 @@ _STRIP_WORDS = frozenset([
     "sp",
     # Product-type word in AmiAmi model kit titles ("Plastic Model")
     "plastic",
+    # Reissue is the same product — strip it so the BBTS "(Reissue)" suffix
+    # doesn't penalize Jaccard when AmiAmi lists the original without that tag.
+    "reissue",
 ])
 
 # Regex to match standalone number tokens (item numbers, catalog IDs)
@@ -173,6 +176,14 @@ def core_title_tokens(normalized_title: str, brand: str | None = None) -> set[st
     Hard edition conflicts (both sides have edition tokens but different
     ones) are additionally caught by the veto in score_pair().
     """
+    # Compound-word split: AmiAmi writes "umamusume" as one token; BBTS writes
+    # "uma musume" as two.  Split before tokenizing so both sides produce the
+    # same tokens.
+    normalized_title = re.sub(r"\bumamusume\b", "uma musume", normalized_title)
+    # Plural normalization: AmiAmi "hololive production" vs BBTS "hololive
+    # productions" — the trailing 's' is meaningless for matching.
+    normalized_title = re.sub(r"\bproductions\b", "production", normalized_title)
+
     stop = set(_STRIP_WORDS)
     if brand:
         stop.update(normalize_brand(brand).split())
