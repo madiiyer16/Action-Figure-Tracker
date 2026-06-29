@@ -17,6 +17,12 @@ Price tracker for action figure collectors who import from Japan. Aggregates lis
 
 ---
 
+## How matching works
+
+FigureTrack only delivers meaningful price comparisons if it can determine that AmiAmi's `figma The Amazing Digital Circus Pomni` and BBTS's `The Amazing Digital Circus figma No.SP-176 Pomni Action Figure` are the same product — a non-trivial entity-resolution problem when the two retailers name figures independently with no shared identifier. The matcher uses a rule-based normalize → block → score → threshold pipeline: titles are reduced to core token sets, candidates are generated only within manufacturer blocks, pairs are scored by Jaccard similarity with a hard edition-mismatch veto (so a DX Edition never merges with a standard edition), and high-confidence pairs are auto-merged. The candidate space is 99.89% negative at the pair level, so the failure modes are asymmetric — a wrong merge is a visible bug, while a missed match is just a duplicated listing. That makes precision the metric that matters, and the matcher achieves zero false positives, established by exhaustive inspection of all token-sharing candidate pairs rather than a held-out sample. Full methodology, evaluation design, and residual failure modes in [DESIGN.md](DESIGN.md).
+
+---
+
 ## Tech stack
 
 | Layer | Choice |
